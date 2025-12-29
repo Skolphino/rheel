@@ -1,0 +1,16 @@
+spin_duration_ms = 5000.0
+
+[[segments]]
+label = "Red"
+weight = 1
+color = "#ff0000"  
+
+[[segments]]
+label = "Blue"
+weight = 1 
+color = "#0000ff"  
+
+[[segments]]
+label = "Green"
+weight = 1 
+color = "#00ff00"  
