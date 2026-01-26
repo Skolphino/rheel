@@ -24,6 +24,10 @@ struct AppConfig {
     spin_duration_ms: f32,
     center_color: Option<String>,
     center_radius_ratio: Option<f32>,
+    winner_message: Option<String>,
+    winner_font_size: Option<f32>,
+    label_font_size: Option<f32>,
+    show_segments_borders: Option<bool>,
     segments: Vec<SegmentConfig>,
 }
 
@@ -33,6 +37,10 @@ impl Default for AppConfig {
             spin_duration_ms: 5000.0,
             center_color: Some("#202020".to_string()),
             center_radius_ratio: Some(0.25),
+            winner_message: Some("Winner:\n{label}".to_string()),
+            winner_font_size: Some(40.0),
+            label_font_size: Some(20.0),
+            show_segments_borders: Some(true),
             segments: vec![
                 SegmentConfig {
                     label: "1".into(),
@@ -89,6 +97,10 @@ struct OverlayApp {
     // Visuals
     center_color: egui::Color32,
     center_radius_ratio: f32,
+    winner_template: String,
+    winner_font_size: f32,
+    label_font_size: f32,
+    show_segments_borders: bool,
 
     // Data
     segments: Vec<ProcessedSegment>,
@@ -126,6 +138,15 @@ impl OverlayApp {
 
         let center_radius_ratio = config.center_radius_ratio.unwrap_or(0.2).clamp(0.0, 0.8);
 
+        // Process winner configuration
+        let winner_template = config
+            .winner_message
+            .unwrap_or_else(|| "Winner:\n{label}".to_string());
+
+        let winner_font_size = config.winner_font_size.unwrap_or(40.0);
+        let label_font_size = config.label_font_size.unwrap_or(20.0);
+        let show_segments_borders = config.show_segments_borders.unwrap_or(true);
+
         let mut rng = rand::rng();
 
         // Initialize Audio System
@@ -146,6 +167,10 @@ impl OverlayApp {
 
             center_color,
             center_radius_ratio,
+            winner_template,
+            winner_font_size,
+            label_font_size,
+            show_segments_borders,
             segments,
             total_weight,
             winning_label: None,
@@ -231,15 +256,13 @@ impl App for OverlayApp {
             self.rotation =
                 self.start_rotation + eased * (self.target_rotation - self.start_rotation);
 
-            // --- AUDIO TRIGGER LOGIC (FIXED) ---
+            // --- AUDIO TRIGGER LOGIC ---
 
-            // 1. Get info in a separate block to handle borrowing
             let (current_index, label_text) = {
                 let (idx, lbl, _) = self.get_current_segment_info();
-                (idx, lbl.to_string()) // Clone string so we stop borrowing 'self'
+                (idx, lbl.to_string())
             };
 
-            // 2. Now we can mutate 'self' safely
             if self.last_segment_index.is_none() {
                 self.last_segment_index = Some(current_index);
             } else if let Some(last_index) = self.last_segment_index {
@@ -299,30 +322,36 @@ impl App for OverlayApp {
                         ));
                     }
 
-                    ui.painter().add(egui::Shape::convex_polygon(
-                        points,
-                        seg.color,
-                        egui::Stroke::new(1.0, egui::Color32::BLACK),
-                    ));
+                    let stroke = if self.show_segments_borders {
+                        egui::Stroke::new(1.0, egui::Color32::BLACK)
+                    } else {
+                        egui::Stroke::new(1.0, seg.color)
+                    };
 
-                    let text_r = inner_radius + (outer_radius - inner_radius) * 0.5;
-                    let text_a = angle + width * 0.5;
-                    let text_pos = egui::pos2(
-                        center.x + text_r * text_a.cos(),
-                        center.y + text_r * text_a.sin(),
-                    );
+                    ui.painter()
+                        .add(egui::Shape::convex_polygon(points, seg.color, stroke));
 
-                    ui.painter().text(
-                        text_pos,
-                        egui::Align2::CENTER_CENTER,
-                        &seg.label,
-                        egui::FontId::proportional(20.0),
-                        if is_bright(seg.color) {
-                            egui::Color32::BLACK
-                        } else {
-                            egui::Color32::WHITE
-                        },
-                    );
+                    // Text drawing logic - skips if size is 0
+                    if self.label_font_size > 0.0 {
+                        let text_r = inner_radius + (outer_radius - inner_radius) * 0.5;
+                        let text_a = angle + width * 0.5;
+                        let text_pos = egui::pos2(
+                            center.x + text_r * text_a.cos(),
+                            center.y + text_r * text_a.sin(),
+                        );
+
+                        ui.painter().text(
+                            text_pos,
+                            egui::Align2::CENTER_CENTER,
+                            &seg.label,
+                            egui::FontId::proportional(self.label_font_size),
+                            if is_bright(seg.color) {
+                                egui::Color32::BLACK
+                            } else {
+                                egui::Color32::WHITE
+                            },
+                        );
+                    }
 
                     angle = end;
                 }
@@ -346,9 +375,11 @@ impl App for OverlayApp {
 
                 if let Some(winner) = &self.winning_label {
                     ui.centered_and_justified(|ui| {
+                        let message = self.winner_template.replace("{label}", winner);
+
                         ui.label(
-                            egui::RichText::new(format!("Winner:\n{}", winner))
-                                .size(40.0)
+                            egui::RichText::new(message)
+                                .size(self.winner_font_size)
                                 .strong()
                                 .background_color(egui::Color32::from_black_alpha(200))
                                 .color(egui::Color32::WHITE),
